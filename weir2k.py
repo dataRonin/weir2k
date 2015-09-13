@@ -14,6 +14,7 @@ import mpld3
 import matplotlib.dates as mdates
 import matplotlib 
 import errno
+from scipy.interpolate import interp1d
 
 
 """
@@ -241,6 +242,11 @@ def parameterize_first(sitecode, wateryear, filename):
 
             try:
                 data_value = round(float(row[column + 1]),3)
+
+                if str(data_value) == "nan":
+                    data_value = None
+                else:
+                    pass
             except Exception:
                 data_value = None
 
@@ -310,22 +316,43 @@ def generate_first(od, sparse=False):
                 estim_dict.update({list_obs[index]:od[list_obs[index]]})
 
             else:
+                #import pdb; pdb.set_trace()
                 # generate a small range of dates for the missing dates and listify
                 mini_dates = drange(list_obs[index], list_obs[index+1], datetime.timedelta(minutes=5))
                 dl = [x for x in mini_dates]
-                mini_values = drange(od[list_obs[index]], od[list_obs[index+1]],len(dl))
-                vl = [x for x in mini_values] 
+                
+                # if the current value and the next one are the same
+                if od[list_obs[index]] == od[list_obs[index+1]]:
+                    vl = [od[list_obs[index]]]*len(dl)
+                    el = 'E'*len(vl)
+                    # update the estimations dictionary with these new values
+                    newd = dict(zip(dl,vl))
+                    # update the flags with "E"
+                    newd2 = dict(zip(dl,el))
+                    # update the estimations dictionary
+                    estim_dict.update(newd)
+                    flag_dict.update(newd2)
 
-                el = 'E'*len(vl)
-                # update the estimations dictionary with these new values
-                newd = dict(zip(dl,vl))
-                # update the flags with "E"
-                newd2 = dict(zip(dl,el))
-                estim_dict.update(newd)
-                flag_dict.update(newd2)
+                else:
+                    # a numpy array for the number of missing
+                    indices_missing = np.arange(len(dl))
+                    knownx = [indices_missing[0], indices_missing[-1]]
+                    knowny = [od[list_obs[index]], od[list_obs[index+1]]]
+                    # interpolation function
+                    fx = interp1d(knownx, knowny)
+                    # apply to the indices
+                    vl = fx(indices)
+                    # estimate code for the length of vl
+                    el = 'E'*len(vl)
+                    # update the estimations dictionary with these new values
+                    newd = dict(zip(dl,vl))
+                    # update the flags with "E"
+                    newd2 = dict(zip(dl,el))
+                    estim_dict.update(newd)
+                    flag_dict.update(newd2)
 
-                newd={}
-                newd2={}
+                    newd={}
+                    newd2={}
 
         # write it to a csv file for subsequent generation
         with open(output_filename, 'wb') as writefile:
@@ -389,14 +416,24 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
             # don't bother carrying site code, we'll have it in the function
             dt = datetime.datetime.strptime(str(row[1]), date_type)
             
-            # add 2 to the column of date to do the working adjustment
-            data_value = round(float(row[3]),3)
+            # in both the first and "re" it is in column 3
+            try:
+                data_value = round(float(row[3]),3)
+            except Exception:
+                data_value = None
+
             
             # raw values brought across but don't do anything with them
-            raw_value = round(float(row[2]),3)
+            try:
+                raw_value = round(float(row[2]),3)
+            except Exception:
+                raw_value = None
             
-            # flag values are carried across but again, don't do anything with them
-            flag_value = str(row[4])
+            if method != "re":
+                # flag values are carried across but again, don't do anything with them
+                flag_value = str(row[4])
+            elif method == "re":
+                flag_value = str(row[5])
 
             if dt not in od:
                 
@@ -456,7 +493,10 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             
             weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
 
-            adjusted_value = weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val']
+            try:
+                adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
+            except Exception:
+                adjusted_value = None
 
             if each_date != this_correction:
                 event = 'NA'
@@ -482,11 +522,15 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             
             weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
 
-            adjusted_value = weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val']
+            try: 
+                adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
+            except Exception:
+                adjusted_value = None
 
         if each_date not in wd:
 
-            wd[each_date] = {'val': od[each_date]['val'], 'adj': round(adjusted_value,3), 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
+
+            wd[each_date] = {'val': od[each_date]['val'], 'adj': adjusted_value, 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
 
         elif each_date in wd:
             print "this date has already been put in"
@@ -631,10 +675,11 @@ if __name__ == "__main__":
         # generate a first data with or without estimations
         output_filename_first = generate_first(od,  sparse=False)
 
-        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od)
+        # generate the adjustments data with the extra column
+        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
-        
+    
     elif method == "sparse":
         
         filename = find_files(sitecode, wateryear, 'raw_data')
@@ -646,10 +691,14 @@ if __name__ == "__main__":
         # generate a first data with or without estimations
         output_filename_first = generate_first(od,  sparse=True)
 
-        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+        # generate the adjustments data with the extra column
+        do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+
+        # generate the adjustments data with the extra column
+        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
-
     elif method == "re":
         output_filename_re = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
 
