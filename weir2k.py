@@ -9,12 +9,12 @@ import os.path
 from itertools import islice
 import math
 import numpy as np
-import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt 
+import mpld3
+import matplotlib.dates as mdates
 import matplotlib 
-import collections
-import os
 import errno
-from scipy.interpolate import interp1d
+
 
 """
 A script for correction of streamflow.
@@ -529,6 +529,82 @@ def test_csv_structure(filename):
         else:
             continue
 
+def make_graphs(sitecode, wateryear, adjusted_dictionary):
+    """ make the graphs as you did before"""
+
+    # directory of images; path to images with a slash in case
+    dir_images = str(sitecode) + "_" + str(wateryear) + "_" + "images"
+
+    # no sense in sorting this a million times
+    sorted_dates = sorted(adjusted_dictionary.keys())
+
+    for each_month in xrange(1,12):
+        
+        if each_month not in [10, 11, 12]:
+            dates = [x for x in sorted_dates if x.month == each_month and x.year==wateryear]
+            
+            prior_values = [adjusted_dictionary[x]['val'] for x in dates if adjusted_dictionary[x]['val'] != None]
+            pvd = [x for x in dates if adjusted_dictionary[x]['val'] != None]
+            
+            adjusted_values = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['adj'] != None]
+            avd = [x for x in dates if adjusted_dictionary[x]['adj'] != None]
+
+            #maintes = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
+            #mainte_dates = [x for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
+
+            image_name = str(wateryear) + "_" + str(each_month) + "_wy_" + sitecode + ".png"
+            name1 = os.path.join(dir_images, image_name)
+
+            html_image_name = str(wateryear) + "_" + str(each_month) + "_wy_" + sitecode + ".html"
+            name2 = os.path.join(dir_images, html_image_name)
+
+            fig, ax = plt.subplots()
+            fig.autofmt_xdate()
+            ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
+            ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
+            ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
+            #ax.scatter(mainte_dates, maintes, s=30, c='red', alpha = 0.4, label='MAINTE')
+            ax.legend(loc = 1)
+            plt.savefig(name1)
+
+            html = mpld3.fig_to_html(fig)
+            mpld3.save_html(fig, name2)
+
+            plt.close()
+
+
+        elif each_month in [10,11,12]:
+            dates = [x for x in sorted_dates if x.month == each_month and x.year == (wateryear -1)]
+            prior_values = [adjusted_dictionary[x]['val'] for x in dates if adjusted_dictionary[x]['val'] != None]
+            pvd = [x for x in dates if adjusted_dictionary[x]['val'] != None]
+            
+            adjusted_values = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['adj'] != None]
+            avd = [x for x in dates if adjusted_dictionary[x]['adj'] != None]
+            
+            #maintes = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
+            #mainte_dates = [x for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
+
+            image_name = str(wateryear-1) + "_" + str(each_month) + "_wy_" + sitecode + ".png"
+            name1 = os.path.join(dir_images, image_name)
+
+            html_image_name = str(wateryear-1) + "_" + str(each_month) + "_wy_" + sitecode + ".html"
+            name2 = os.path.join(dir_images, html_image_name)
+
+            fig, ax = plt.subplots()
+            fig.autofmt_xdate()
+            ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
+            ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
+            ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
+            #ax.scatter(mainte_dates, maintes, s=30, c='red', alpha = 0.4, label='MAINTE')
+            ax.legend(loc = 1)
+            plt.savefig(name1)
+
+            ## generate HTML for October
+            html = mpld3.fig_to_html(fig)
+            mpld3.save_html(fig, name2)
+
+            plt.close()
+
 if __name__ == "__main__":
 
     sitecode_raw = sys.argv[1]
@@ -556,6 +632,8 @@ if __name__ == "__main__":
         output_filename_first = generate_first(od,  sparse=False)
 
         adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od)
+
+        make_graphs(sitecode, wateryear, adjusted_dictionary)
         
     elif method == "sparse":
         
@@ -570,9 +648,12 @@ if __name__ == "__main__":
 
         adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
 
+        make_graphs(sitecode, wateryear, adjusted_dictionary)
+
     elif method == "re":
         output_filename_re = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
 
         adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method)
 
+        make_graphs(sitecode, wateryear, adjusted_dictionary)
     
