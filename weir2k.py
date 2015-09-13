@@ -3,6 +3,7 @@ import datetime
 import os
 import fnmatch
 import sys
+import shutil
 import pymssql
 import os.path
 from itertools import islice
@@ -62,90 +63,157 @@ def create_subfolders(sitecode, wateryear):
     # directory of working data; where the 7 digit data lives
     dir_working = str(sitecode) + "_" + str(wateryear) + "_" + "working"
 
+    # directory for backups; because I am paranoid
+    dir_backup = str(sitecode) + "_" + str(wateryear) + "_" + "backups"
+
     # create a directory for images if it does not already exist in your folder
     try:
         make_sure_path_exists(dir_images)
     except Exception:
         print Exception
 
-def getcorrtable(wateryear,sitecode):
-    """ corr table must be present and named corr_table_wsname_year.csv 
-    for example, corr_table_gscc01_2014.csv
-    corr_table_gsws01_2015.csv
-    etc.
-    """
+    # create a directory for working files if it's not in your folder
+    try:
+        make_sure_path_exists(dir_working)
+    except Exception:
+        print Exception
 
-    if wateryear == "2014" or wateryear == 2014:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2014.csv"
-    elif wateryear == "2015" or wateryear == 2015:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2015.csv"
-    elif wateryear == "2013" or wateryear == 2013:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2013.csv"
-    elif wateryear == "2012" or wateryear == 2012:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2012.csv"
-    elif wateryear == "2011" or wateryear == 2011:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2011.csv"
-    elif wateryear == "2010" or wateryear == 2010:
-        corr = "corr_table_" + sitecode.lower()+"_"+"2010.csv"
-    else:
-        print("using a default corr table....")
-        corr = "corr_table_2014.csv"
-
-    return corr
-
-def convert_corr_to_dict(corr, sitecode):
+    # create a directory for backup files if it's not in your folder
+    try:
+        make_sure_path_exists(dir_backup)
+    except Exception:
+        print Exception
+    
+def convert_corr_to_dict(sitecode):
     """ this was the first time I ever used a dictionary explicitly.
     dateformat_ideal is what the db has
     dateformat_old is what craig enters
     dateformat_13char is the 13 character date
     """
 
+    corr_name = "corr_table_" + sitecode.lower() + "_" + str(wateryear) + ".csv"
+    corr = os.path.join('corr_table', corr_name)
+
     dateformat_ideal = '%Y-%m-%d %H:%M:%S'
     dateformat_old = '%m/%d/%Y %H:%M'
     dateformat_13char = '%Y%m%d %H%M'
 
-    reader = csv.reader(open(corr))
+    # output
+    od = {}
+
+    # fox changed this on 09-13-2015 --> I think this is a better syntax but I don't know why
+    with open(corr, 'rb') as readfile:
+        reader = csv.reader(readfile)
+
+        # no need to bring in any values that begin after this water year
+        test_value = datetime.datetime(wateryear,10,1,0,5)
     
-    d = {}
-
-    for row in reader:
+        for row in reader:
         
-        if row[2] == sitecode:
-            try:
-                dt = datetime.datetime.strptime(row[3], dateformat_ideal)
-            except Exception:
-                try:
-                    dt = datetime.datetime.strptime(row[3], dateformat_old)
-                except Exception:
-                    dt = datetime.datetime.strptime(row[3], dateformat_13char)
+            # skip header lines
+            if str(row[2]) != sitecode:
+                continue
 
-            dt = dt-datetime.timedelta(minutes = dt.minute % 5)
-            key = str(dt)
+            try:
+                dt = datetime.datetime.strptime(str(row[3]), dateformat_ideal)
+
+                if dt.minute % 5 != 0:
+                    new_minute = dt.minute // 5 * 5 
+                    dt = datetime.datetime(dt.year, dt.month, dt.day, dt.hour, new_minute, 0)
+                    dt += datetime.timedelta(minutes = 5)
+                    # if the beginning date time from the corr table is bigger than the last day of the water year, we won't ever use this correction, so don't bother to import it. 
+                    if dt >=test_value:
+                        return od
+        
+            except Exception:
+                
+                try:
+                    dt = datetime.datetime.strptime(str(row[3]), dateformat_old)
+                    if dt.minute % 5 != 0:
+                        new_minute = dt.minute // 5 * 5 
+                        dt = datetime.datetime(dt.year, dt.month, dt.day, dt.hour, new_minute, 0)
+                        dt += datetime.timedelta(minutes = 5)
+                       
+                        # see note above
+                        if dt >=test_value:
+                            return od
+
+                except Exception:
+                    try:
+                        dt = datetime.datetime.strptime(str(row[3]), dateformat_13char)
+                        # set the correction to occur on the last five minute interval 
+                        if dt.minute % 5 != 0:
+                            new_minute = dt.minute // 5 * 5 
+                            dt = datetime.datetime(dt.year, dt.month, dt.day, dt.hour, new_minute, 0)
+                            dt += datetime.timedelta(minutes = 5)
+                            if dt >=test_value:
+                                return od
+                
+                    except Exception:
+                        
+                        print "error importing corr table due to incompatible date on the begin date. check the format and try again"
+                        dt = None
+
             bgncr = float(row[4])
             bgnhg = float(row[5])
-            enddt = str(row[6])
-            comm = str(row[9])
+            bgnratio = bgnhg/bgncr
+        
+            try:
+                enddt = datetime.datetime.strptime(str(row[6]), dateformat_old)
+
+                if enddt.minute % 5 != 0:
+                    new_minute = enddt.minute // 5 * 5 
+                    enddt = datetime.datetime(enddt.year, enddt.month, enddt.day, enddt.hour, new_minute, 0)
+                    enddt += datetime.timedelta(minutes = 5)
+                
+            except Exception as exc:
+
+                try:
+                    enddt = datetime.datetime.strptime(str(row[6]), dateformat_ideal)
+                    if enddt.minute % 5 != 0:
+                        new_minute = enddt.minute // 5 * 5
+                        enddt = datetime.datetime(enddt.year, enddt.month, enddt.day, enddt.hour, new_minute, 0)
+                        enddt += datetime.timedelta(minutes = 5)
+                except Exception:
+                    try:
+                        enddt = datetime.datetime.strptime(str(row[6]), dateformat_13char)
+                        
+                        if enddt.minute % 5 != 0:
+                            new_minute = enddt.minute // 5 * 5 
+                            enddt = datetime.datetime(enddt.year, enddt.month, enddt.day, enddt.hour, new_minute, 0)
+                            enddt += datetime.timedelta(minutes = 5)
+                    
+                    except Exception:
+                        
+                        print "error importing corr table due to incompatible date on end date - can you bring over the record from the subsequent table?"
+                        enddt = None
             
             try:
                 endcr = float(row[7])
-                endhg = float(row[8])
-            
+                endhg = float(row[8])            
+                endratio = endhg/endcr
+
             except Exception as exc:
-                endcr = row[7]
-                endhg = row[8]
-        else:
-            continue
+                endcr = None
+                endhg = None
+                endratio = None
+
+            try:
+                # compute the duration of the interval from that beginning time to its follower in minutes
+                duration = (enddt - dt).days*1440 + (enddt - dt).seconds//60
+            except Exception:
+                duration = None
+
+                
+            # if the key is already in the dictionary, skip it
+            if enddt not in od:
+                # populate it
+                od[enddt] = {'sitecode': sitecode, 'bgn_cr' : bgncr, 'bgn_hg' :bgnhg, 'bgn_rat': bgnratio, 'bgn_dt' : dt, 'end_cr' : endcr, 'end_hg': endhg, 'end_rat': endratio, 'duration':duration}
+            
+            elif enddt in od:
+                pass
         
-        # if the key is already in the dictionary, skip it
-        if key in d:
-            continue
-
-        # the items surrounded by 7 to 9
-        d[key] = [sitecode, bgncr, bgnhg, enddt, endcr, endhg, comm]
-
-        od = collections.OrderedDict(sorted(d.items()))
-
-    # return the dictionary to the main loop!
+    # return the correction table as dictioanry
     return od
 
 def drange(start, stop, step):
@@ -155,10 +223,8 @@ def drange(start, stop, step):
         yield r
         r += step
 
-def generate_first(sitecode, wateryear, filename, corr_od, sparse=False):
-    """ 
-    generates the outputs without if sparse is set to false and with them if true
-    """
+def parameterize_first(sitecode, wateryear, filename):
+    """ from the raw input figure out which column has the dates and what its format is. assume that the data is in the column which is to the right of the dates. """
 
     # "output dictionary" --> anytime I use od in a program this is what it is -- Fox 09/10/2015
     od = {}
@@ -173,8 +239,261 @@ def generate_first(sitecode, wateryear, filename, corr_od, sparse=False):
         for row in reader:
             dt = datetime.datetime.strptime(str(row[column]), date_type)
 
-            print row
+            try:
+                data_value = round(float(row[column + 1]),3)
+            except Exception:
+                data_value = None
+
+            # break out of the loop if you have done more than the water year
+            if dt > datetime.datetime(wateryear, 10, 1, 0, 0):
+                return od
+            else:
+                pass
             
+            if dt not in od:
+                od[dt] = data_value
+            elif dt in od:
+                pass
+    
+    return od
+
+def generate_first(od, sparse=False):
+    """ 
+    generates the outputs with estimations if sparse is set to false and without if true
+    The "first" output will not show the adjustments, just the site code, date, data, and estimated data if you set sparse to false
+    """
+
+    output_filename = sitecode + "_" + str(wateryear) + "_" + "first.csv"
+
+    if sparse == False:
+        
+        # one perfect wateryear from 2013-10-01 00:00:00 to 2014-10-01 00:00:00 - iterator always "stops" one shy of last date time
+        compare_range = drange(datetime.datetime(wateryear-1, 10, 1, 0, 0), datetime.datetime(wateryear, 10, 1, 0, 5), datetime.timedelta(minutes=5))
+
+        # create a blank dictionary with 5 minute spacing
+        blank_dict = dict.fromkeys(compare_range)
+
+        # update your blank dictionary it with existing values from the raw data
+        # anything that doesn't have a value will be None
+        blank_dict.update(od)
+
+        # create another dictionary to contain flags associated with those estimations
+        flag_dict = {}
+
+        # first fill it with blanks and accepteds based on the blanks!
+        for each_date in blank_dict.keys():
+            if blank_dict[each_date] == None:
+                flag_dict.update({each_date:'M'})
+            else:
+                flag_dict.update({each_date:'A'})
+
+        # create a dictionary to contain estimations
+        estim_dict = {}
+        
+        # a list of the observed dates in the raw data
+        list_obs = sorted(od.keys())
+
+        # iterate over the observed dates in the raw data
+        for index,each_obs in enumerate(list_obs[:-1]):
+            
+            # compute the difference between subsequent observations and test if it is 5 minutes
+            compute_obs = list_obs[index+1] - list_obs[index]
+            """
+            >>> a = datetime.datetime(2010,10,1,0,0) - datetime.datetime(2010,9,29,0,0)
+            >>> b = datetime.timedelta(minutes = 1440*2)
+            >>> a == b
+            >>> True
+            """
+            # if the obsevations computed are five minutes from one another, store them in the estimated dictionary, otherwise, use the drange function to do a linear interpolation between them
+            if compute_obs == datetime.timedelta(minutes=5):
+                # the datetime : the value at that date time
+                estim_dict.update({list_obs[index]:od[list_obs[index]]})
+
+            else:
+                # generate a small range of dates for the missing dates and listify
+                mini_dates = drange(list_obs[index], list_obs[index+1], datetime.timedelta(minutes=5))
+                dl = [x for x in mini_dates]
+                mini_values = drange(od[list_obs[index]], od[list_obs[index+1]],len(dl))
+                vl = [x for x in mini_values] 
+
+                el = 'E'*len(vl)
+                # update the estimations dictionary with these new values
+                newd = dict(zip(dl,vl))
+                # update the flags with "E"
+                newd2 = dict(zip(dl,el))
+                estim_dict.update(newd)
+                flag_dict.update(newd2)
+
+                newd={}
+                newd2={}
+
+        # write it to a csv file for subsequent generation
+        with open(output_filename, 'wb') as writefile:
+            writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
+
+            try:
+                # blank dict has been gap filled
+                for each_date in sorted(blank_dict.keys()):
+                
+                    dt = datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+                    writer.writerow([sitecode, dt, blank_dict[each_date], estim_dict[each_date], flag_dict[each_date]])
+
+            except Exception:
+
+                pass
+
+    elif sparse == True:
+
+        # a list of the observed dates in the raw data
+        list_obs = sorted(od.keys())
+
+        # write it to a csv file for subsequent generation
+        with open(output_filename, 'wb') as writefile:
+            writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
+
+            try:
+                # blank dict has been gap filled
+                for each_date in list_obs:
+                
+                    dt = datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+                    writer.writerow([sitecode, dt, od[each_date], od[each_date], 'A'])
+
+            except Exception:
+                pass
+    return output_filename
+
+def do_adjustments(sitecode, wateryear, filename, corr_od, method):
+    """ 
+    performs adjustments on the outputs - ALWAYS pulls from column 3!
+    """
+
+    output_filename = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
+
+    # create a backup copy if you're doing the re-adjustment, in the chance something got messed up
+    if method=="re":
+        shutil.copy(output_filename, os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "backups",sitecode + "_" + str(wateryear) + "_" + "re.csv"))
+    else:
+        pass
+
+    od = {}
+    
+    # check date type by using the first column
+    date_type = test_csv_date(filename, 1)
+    
+    # open the input file and process
+    with open(filename, 'rb') as readfile:
+        reader = csv.reader(readfile)
+
+        for row in reader:
+            
+            # don't bother carrying site code, we'll have it in the function
+            dt = datetime.datetime.strptime(str(row[1]), date_type)
+            
+            # add 2 to the column of date to do the working adjustment
+            data_value = round(float(row[3]),3)
+            
+            # raw values brought across but don't do anything with them
+            raw_value = round(float(row[2]),3)
+            
+            # flag values are carried across but again, don't do anything with them
+            flag_value = str(row[4])
+
+            if dt not in od:
+                
+                # assign 'NA' for events beforehand
+                od[dt] = {'raw' : raw_value, 'val': data_value, 'fval': flag_value, 'event':'NA'}
+            
+            elif dt in od:
+                pass
+       
+        # the key function is "determine weights"
+        wd = determine_weights(sitecode, wateryear, corr_od, od)
+        """
+        This monstrous structure contains all of your wildest linear interpolation dreams for validating the code!
+
+        wd[each_date] = {'val': od[each_date]['val'], 'adj': round(adjusted_value,3), 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
+
+        """
+    with open(output_filename, 'wb') as writefile:
+        writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
+
+        for each_date in sorted(wd.keys()):
+            writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], wd[each_date]['adj'], wd[each_date]['fval'], wd[each_date]['event']])
+
+    return wd, output_filename
+
+def determine_weights(sitecode, wateryear, corr_od, od):
+    """ The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start"""
+
+    corr_dates_as_list = sorted(corr_od.keys())
+    observed_dates_as_list = sorted(od.keys())
+
+    # filter the correction table to only include things that are indexed on an end date which is in our water year - nothing after this year.
+    relevant_corr_dates = [x for x in corr_dates_as_list if x >= datetime.datetime(wateryear-1, 10,1,0,0)]
+    
+    # working dictionary
+    wd = {}
+
+    # we'll use the same "correction" until we pass that time, at which point, we'll move to the next correction factor, by calling the iterator.next() method
+    iterator_for_correction = iter(relevant_corr_dates)
+
+    # the first correction to be applied
+    this_correction = iterator_for_correction.next()
+
+    for each_date in observed_dates_as_list:
+
+        # as long as the date is less than the correction factor or equal to it
+        if each_date <= this_correction:
+
+            # the time left until the end of the interval, in minutes
+            time_difference = float((this_correction-each_date).days*1440 + (this_correction - each_date).seconds//60)
+            
+            """
+            "weighted ratios" of each time : as we move towards the adjustment (this_correction) time, the ending ratio of hg/cr becomes more influential as compared to the beginning ratio of the hg/cr because the time_difference to the end gets very small relative to the duration of the interval as a whole. on the actual correction moment, there is no longer any beginning influence at all, as the difference between the current moment and the end of the interval are the same. the cr then is mapping directly onto the hook gage - the value in (cr) times the ratio of the (hg/cr) at the end times 1 yields the hg, and the ratio of the (hr/cr) at the beginning is times 0, so that does not have an affect.
+            """
+
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
+            
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
+
+            adjusted_value = weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val']
+
+            if each_date != this_correction:
+                event = 'NA'
+            else: 
+                event = "MAINTE"
+
+        elif each_date > this_correction:
+            
+            # assign the event
+            event = 'NA'
+
+            # step to the next correction factor
+            this_correction = iterator_for_correction.next()
+
+            # you still need to compute this value here! because the correction has moved on it should fall into the less than pool on the next loop
+
+            # the time left until the end of the interval, in minutes
+            time_difference = float((this_correction - each_date).days*1440 + (this_correction - each_date).seconds//60)
+            
+            # the "weighted ratios" of that time 
+            # as we move towards the adjustment, the ending ratio of hg/cr becomes more influential because the time_difference to the end gets really small and the duration is the same. when you are at the end, there is no longer any beginning influence and you are doing all the adjustment of the hg. when you move into the next interval, then, you are aligned.
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
+            
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
+
+            adjusted_value = weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val']
+
+        if each_date not in wd:
+
+            wd[each_date] = {'val': od[each_date]['val'], 'adj': round(adjusted_value,3), 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
+
+        elif each_date in wd:
+            print "this date has already been put in"
+    
+    return wd
+
+
 def test_csv_date(filename, date_column):
     """" figure out what date format to use"""
 
@@ -219,19 +538,41 @@ if __name__ == "__main__":
     sitecode, wateryear = string_correct(sitecode_raw,  wateryear_raw)
     
     # get the corr table and put it into a dictionary
-    corr_name = getcorrtable(wateryear, sitecode)
-    corr = os.path.join('corr_table', corr_name)
-    corr_od = convert_corr_to_dict(corr, sitecode)
+    corr_od = convert_corr_to_dict(sitecode)
 
+    # create subfolders for images and working data
+    create_subfolders(sitecode, wateryear)
+
+    # for the "first" and "sparse" methods, we'll generate only the four column format
     if method == "first":
-        create_subfolders(sitecode, wateryear)
+        
         filename = find_files(sitecode, wateryear, 'raw_data')
-        print filename
-    elif method == "sparse":
-        pass
-    elif method == "re":
-        pass
+        print "File found for the " + method + " method : " + filename
 
-    print filename
-    generate_first(sitecode, wateryear, filename, corr_od, sparse=False)
+        # figure out what columns contain the dates and raw values and read in from csv
+        od = parameterize_first(sitecode, wateryear, filename)
+
+        # generate a first data with or without estimations
+        output_filename_first = generate_first(od,  sparse=False)
+
+        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od)
+        
+    elif method == "sparse":
+        
+        filename = find_files(sitecode, wateryear, 'raw_data')
+        print "File found for the " + method + " method : " + filename
+
+        # figure out what columns contain the dates and raw values and read in from csv
+        od = parameterize_first(sitecode, wateryear, filename)
+
+        # generate a first data with or without estimations
+        output_filename_first = generate_first(od,  sparse=True)
+
+        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+
+    elif method == "re":
+        output_filename_re = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
+
+        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method)
+
     
