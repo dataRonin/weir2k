@@ -462,7 +462,12 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
 def determine_weights(sitecode, wateryear, corr_od, od):
     """ The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start"""
 
-    corr_dates_as_list = sorted(corr_od.keys())
+    try:
+        corr_dates_as_list = sorted(corr_od.keys())
+    except Exception:
+        # in 2015 the end date is missing so we need to not use that one, it is "None"
+        corr_dates_1 = [x for x in corr_od.keys() if x != None]
+        corr_dates_as_list = sorted(corr_dates_1)
     observed_dates_as_list = sorted(od.keys())
 
     # filter the correction table to only include things that are indexed on an end date which is in our water year - nothing after this year.
@@ -508,8 +513,11 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             # assign the event
             event = 'NA'
 
-            # step to the next correction factor
-            this_correction = iterator_for_correction.next()
+            try:
+                # step to the next correction factor
+                this_correction = iterator_for_correction.next()
+            except StopIteration:
+                return wd
 
             # you still need to compute this value here! because the correction has moved on it should fall into the less than pool on the next loop
 
