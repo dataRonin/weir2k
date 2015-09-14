@@ -405,7 +405,11 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
     od = {}
     
     # check date type by using the first column
-    date_type = test_csv_date(filename, 1)
+    try:
+        date_type = test_csv_date(filename, 1)
+    except Exception:
+        # raw data of ws3 it's on the 0th column!
+        date_type = test_csv_date(filename, 0)
     
     # open the input file and process
     with open(filename, 'rb') as readfile:
@@ -550,32 +554,39 @@ def test_csv_date(filename, date_column):
     """" figure out what date format to use"""
 
     dateformat_ideal = '%Y-%m-%d %H:%M:%S'
-    dateformat_old = '%m/%d/%y %H:%M'
+    dateformat_older = '%m/%d/%y %H:%M'
     dateformat_13char = '%Y%m%d %H%M'
+    dateformat_old = '%m/%d/%Y %H:%M'
     
     with open(filename, 'rb') as readfile:
         reader = csv.reader(readfile)
         testline = reader.next()
-
+        #import pdb; pdb.set_trace()
         try:
             is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_ideal)
             return dateformat_ideal
         except Exception:
             try:
-                is_a_date = datetime.datetime.stprtime(str(testline[date_column]), dateformat_old)
+                is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_old)
+                print testline
                 return dateformat_old
             except Exception:
                 try:
                     is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_13char)
                     return dateformat_13char
                 except Exception:
-                    return False
+                    try:
+                        is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_older)
+                        return dateformat_older
+                    except Exception:
+                        return False
 
 def test_csv_structure(filename):
     """ try to find the date column in about 7 columns"""
     for column in [0,1,2,3,4,5,6,7]:
-    
+        
         date_type = test_csv_date(filename, column)
+        
         if date_type != False:
             return date_type, column
         else:
