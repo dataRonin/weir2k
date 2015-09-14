@@ -186,7 +186,7 @@ def convert_corr_to_dict(sitecode):
                     
                     except Exception:
                         
-                        print "error importing corr table due to incompatible date on end date - can you bring over the record from the subsequent table?"
+                        print "There is an error importing corr table due to incompatible date on end date - can you bring over an extra record from the subsequent table? In the meantime, I\'ll pass in a None and your adjustments will stop on the last known good correction date"
                         enddt = None
             
             try:
@@ -341,7 +341,7 @@ def generate_first(od, sparse=False):
                     # interpolation function
                     fx = interp1d(knownx, knowny)
                     # apply to the indices
-                    vl = fx(indices)
+                    vl = fx(indices_missing)
                     # estimate code for the length of vl
                     el = 'E'*len(vl)
                     # update the estimations dictionary with these new values
