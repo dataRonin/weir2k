@@ -600,6 +600,8 @@ def flow_the_data(raw_dts, raw_hts, rating_calib, desired=300):
                     if str(next_stage) == "nan":
                         next_stage = "None"
 
+                    #else:
+                    #    next_stage = "None"
                     import pdb; pdb.set_trace()
                     return od
 
