@@ -44,8 +44,20 @@ To rerun data:
     $ python weir2k.py "GSWS01" "2014" "re"
 
 
+This data should be more persistent versus problems.
 
+=======
+To do or report problems
+=======
+
+We consider this to be the `working version` of weir2k. To report problems, contact Fox.
 
 pyflow
 ########
+
+This version of pyflow is identical to the previous version.
+
+You can see its documentation [here](https://github.com/dataRonin/flow2).
+
+We will leave up the repository of old pyflow in case it is informative.
 
