@@ -203,8 +203,7 @@ def get_data_from_csv(csvfilename):
     return od
 
 def set_up_iterators(o2, o1):
-    """
-    bin the incoming data into the appropriate equation sets
+    """ Bin the incoming data into the appropriate equation sets
     and create some iterators
 
     od = {'b1' : 'flags' : <iterator>, 'vals' :<iterator> }
@@ -270,7 +269,7 @@ def set_up_iterators(o2, o1):
     return od
 
 def get_samples_dates(cur, sitecode, wateryear):
-    """ a list of tuple date ranges between the starting date and the ending date - base on the begining date, anything afterward doesn't get to count"""
+    """ Creates a list of tuple date ranges between the starting date and the ending date - base on the begining date, anything afterward doesn't get to count"""
 
     startdate = datetime.datetime.strftime(datetime.datetime(int(wateryear)-1,10,1,0,0), '%Y-%m-%d %H:%M:%S')
     enddate = datetime.datetime.strftime(datetime.datetime(int(wateryear),10,1,0,5), '%Y-%m-%d %H:%M:%S' )
@@ -743,10 +742,13 @@ def print_five_minute_file(final_dictionary, sitecode, wateryear, interval_lengt
         sorted_dates = sorted(final_dictionary.keys())
 
         for index, each_date in enumerate(sorted_dates):
-
+            print index
+            print each_date
             stage = final_dictionary[each_date]['stage']
+            print stage
             instq = final_dictionary[each_date]['inst_q']
             totalq = final_dictionary[each_date]['total_q']
+            print totalq
             eqn_set = final_dictionary[each_date]['eqn_set']
             flag  = original_data[each_date]['fval']
             event = original_data[each_date]['event']
@@ -761,11 +763,13 @@ def print_five_minute_file(final_dictionary, sitecode, wateryear, interval_lengt
             except Exception:
                 pass
 
+            # if its not the first value - the mean value computed to the "end" of the interval should be reflected in the previous entry; the total also
             if index != 0:
                 meanq = final_dictionary[sorted_dates[index-1]]['mean_q']
-
+                totalq = final_dictionary[sorted_dates[index-1]]['total_q']
             else:
                 meanq = final_dictionary[each_date]['mean_q']
+                totalq = final_dictionary[each_date]['total_q']
 
             iqa, tqa, mqa =  to_area(sitecode, instq, totalq, meanq)
 
