@@ -742,13 +742,9 @@ def print_five_minute_file(final_dictionary, sitecode, wateryear, interval_lengt
         sorted_dates = sorted(final_dictionary.keys())
 
         for index, each_date in enumerate(sorted_dates):
-            print index
-            print each_date
             stage = final_dictionary[each_date]['stage']
-            print stage
             instq = final_dictionary[each_date]['inst_q']
             totalq = final_dictionary[each_date]['total_q']
-            print totalq
             eqn_set = final_dictionary[each_date]['eqn_set']
             flag  = original_data[each_date]['fval']
             event = original_data[each_date]['event']
