@@ -191,7 +191,7 @@ def convert_corr_to_dict(sitecode, wateryear):
                 
                     except Exception:
                         
-                        print "error importing corr table due to incompatible date on the begin date. check the format and try again"
+                        #print "error importing corr table due to incompatible date on the begin date. check the format and try again"
                         dt = None
 
             bgncr = float(row[4])
@@ -231,7 +231,7 @@ def convert_corr_to_dict(sitecode, wateryear):
                     
                     except Exception:
                         
-                        print "There is an error importing corr table due to incompatible date on end date - can you bring over an extra record from the subsequent table? In the meantime, I\'ll pass in a None and your adjustments will stop on the last known good correction date"
+                        #print "There is an error importing corr table due to incompatible date on end date - can you bring over an extra record from the subsequent table? In the meantime, I\'ll pass in a None and your adjustments will stop on the last known good correction date"
                         enddt = None
             
             try:
@@ -626,11 +626,11 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             except Exception:
                 adjusted_value_diff= None
 
-            try:
-                print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+            # try:
+            #     print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
 
-            except Exception:
-                pass
+            # except Exception:
+            #     pass
 
 
             # if the date incoming is not the same as the correction date, the event is a nonevent.
@@ -695,11 +695,11 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             except Exception:
                 adjusted_value_diff = None
 
-            try:
-                print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+            # try:
+            #     print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
 
-            except Exception:
-                adjusted_value = None
+            # except Exception:
+            #     adjusted_value_di = None
 
         # if we aren't writing it out already
         if each_date not in wd:
@@ -730,7 +730,7 @@ def test_csv_date(filename, date_column):
         except Exception:
             try:
                 is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_old)
-                print testline
+                #print testline
                 return dateformat_old
             except Exception:
                 try:
