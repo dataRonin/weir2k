@@ -26,10 +26,10 @@ You are free to share, copy, transmit, and adapt this work, but you must provide
 """
 
 def make_sure_path_exists(path):
-    """ 
-    stack overflow says this is a cross platform solution
-    os.umask sets the permissions on the directory to all openness, so that you can write the new images within the files you create
-    if that seems to not work, you will want to change the name of the directory each run so you can fix this; I'm not sure how your computer will respond.
+    """ A cross platform solution for making a path correctly.
+
+    :os.umask(0000): sets the permissions on the directory to all openness, so that you can write the new images within the files you create
+    If that seems to not work, you will want to change the name of the directory each run so you can fix this; I'm not sure how your computer will respond.
     """
     try:
         os.umask(0000)
@@ -39,14 +39,23 @@ def make_sure_path_exists(path):
             raise
 
 def string_correct(sitecode_raw, wateryear_raw):
-    """ make sure the cases are correct """
+    """ Makes sure the cases are correct - uppercase sitecode, integer wateryear
+
+    :sitecode_raw: is the sitecode (i.e. GSWS01)
+    :wateryear: integer year
+    """
     sitecode = sitecode_raw.upper()
     wateryear = int(wateryear_raw)
 
     return sitecode, wateryear
 
 def find_files(sitecode, wateryear, subfolder):
-    """ find the raw data files"""
+    """ Finds the raw data files
+
+    :sitecode: ex. GSWS01
+    :wateryear: ex. 2010
+    :subfolder: ex. '~/myData/working/'
+    """
     for root, dir, names in os.walk(subfolder):
         for x in names:
             if sitecode in x and str(wateryear) in x:
@@ -56,12 +65,22 @@ def find_files(sitecode, wateryear, subfolder):
 
 
 def create_subfolders(sitecode, wateryear):
-    """ create directories for images and for working data"""
+    """ Creates directories for images and for working data
+
+    **Inputs**
+    :sitecode: ex. GSWS01
+    :wateryear: ex. 2010
+
+    **Returns**
+    :dir_images: directory containing the images, such as /GSWS01_2010_images/
+    :dir_working: directory containing the working data, such as /GSWS01_2010_working/
+    :dir_backup: directory containing the backup data, to keep track of it
+    """
 
     # directory of images; path to images with a slash in case
     dir_images = str(sitecode) + "_" + str(wateryear) + "_" + "images"
     
-    # directory of working data; where the 7 digit data lives
+    # directory of working data; where the 7 column data lives
     dir_working = str(sitecode) + "_" + str(wateryear) + "_" + "working"
 
     # directory for backups; because I am paranoid
@@ -71,27 +90,43 @@ def create_subfolders(sitecode, wateryear):
     try:
         make_sure_path_exists(dir_images)
     except Exception:
-        print Exception
+        pass
 
     # create a directory for working files if it's not in your folder
     try:
         make_sure_path_exists(dir_working)
     except Exception:
-        print Exception
+        pass
 
     # create a directory for backup files if it's not in your folder
     try:
         make_sure_path_exists(dir_backup)
     except Exception:
-        print Exception
+        pass
     
-def convert_corr_to_dict(sitecode):
-    """ this was the first time I ever used a dictionary explicitly.
-    dateformat_ideal is what the db has
-    dateformat_old is what craig enters
-    dateformat_13char is the 13 character date
+def convert_corr_to_dict(sitecode, wateryear):
+    """ Converts a correction table to a dictionary
+
+    **Inputs**
+    :sitecode: ex. GSWS01
+    :wateryear: ex. 2010
+
+    **Internal Variables**
+    :dateformat_ideal: is what the db has
+    :dateformat_old: is what craig enters
+    :dateformat_13char: is the 13 character date
+
+    ..Example:
+
+    >>> corr_od[datetime.datetime(2014, 9, 29, 14, 50)]['duration']
+    >>> 8910
+    >>> corr_od[datetime.datetime(2014, 9, 29, 14, 50)]['bgn_dt']
+    >>> datetime.datetime(2014, 9, 23, 10, 20)
+    >>> datetime.datetime(2014, 9,23,10,20) + datetime.timedelta(minutes=8910)
+    >>> datetime.datetime(2014, 9, 29, 14, 50)
     """
 
+    # note: did not have the wy explicitly in here before 09-30-2015, may have caused namespace errors?
     corr_name = "corr_table_" + sitecode.lower() + "_" + str(wateryear) + ".csv"
     corr = os.path.join('corr_table', corr_name)
 
@@ -116,19 +151,22 @@ def convert_corr_to_dict(sitecode):
                 continue
 
             try:
+                # first date format
                 dt = datetime.datetime.strptime(str(row[3]), dateformat_ideal)
 
                 if dt.minute % 5 != 0:
                     new_minute = dt.minute // 5 * 5 
                     dt = datetime.datetime(dt.year, dt.month, dt.day, dt.hour, new_minute, 0)
                     dt += datetime.timedelta(minutes = 5)
+                    
                     # if the beginning date time from the corr table is bigger than the last day of the water year, we won't ever use this correction, so don't bother to import it. 
-                    if dt >=test_value:
+                    if dt >= test_value:
                         return od
         
             except Exception:
                 
                 try:
+                    # second date format
                     dt = datetime.datetime.strptime(str(row[3]), dateformat_old)
                     if dt.minute % 5 != 0:
                         new_minute = dt.minute // 5 * 5 
@@ -136,18 +174,19 @@ def convert_corr_to_dict(sitecode):
                         dt += datetime.timedelta(minutes = 5)
                        
                         # see note above
-                        if dt >=test_value:
+                        if dt >= test_value:
                             return od
 
                 except Exception:
                     try:
+                        # third date format
                         dt = datetime.datetime.strptime(str(row[3]), dateformat_13char)
                         # set the correction to occur on the last five minute interval 
                         if dt.minute % 5 != 0:
                             new_minute = dt.minute // 5 * 5 
                             dt = datetime.datetime(dt.year, dt.month, dt.day, dt.hour, new_minute, 0)
                             dt += datetime.timedelta(minutes = 5)
-                            if dt >=test_value:
+                            if dt >= test_value:
                                 return od
                 
                     except Exception:
@@ -157,9 +196,11 @@ def convert_corr_to_dict(sitecode):
 
             bgncr = float(row[4])
             bgnhg = float(row[5])
+
             bgnratio = bgnhg/bgncr
         
             try:
+                # first date format
                 enddt = datetime.datetime.strptime(str(row[6]), dateformat_old)
 
                 if enddt.minute % 5 != 0:
@@ -170,6 +211,7 @@ def convert_corr_to_dict(sitecode):
             except Exception as exc:
 
                 try:
+                    # second date format
                     enddt = datetime.datetime.strptime(str(row[6]), dateformat_ideal)
                     if enddt.minute % 5 != 0:
                         new_minute = enddt.minute // 5 * 5
@@ -177,6 +219,7 @@ def convert_corr_to_dict(sitecode):
                         enddt += datetime.timedelta(minutes = 5)
                 except Exception:
                     try:
+                        # third date format
                         enddt = datetime.datetime.strptime(str(row[6]), dateformat_13char)
                         
                         if enddt.minute % 5 != 0:
@@ -202,6 +245,7 @@ def convert_corr_to_dict(sitecode):
             try:
                 # compute the duration of the interval from that beginning time to its follower in minutes
                 duration = (enddt - dt).days*1440 + (enddt - dt).seconds//60
+
             except Exception:
                 duration = None
 
@@ -264,15 +308,15 @@ def parameterize_first(sitecode, wateryear, filename):
     return od
 
 def generate_first(od, sparse=False):
-    """ 
-    generates the outputs with estimations if sparse is set to false and without if true
+    """ generates the outputs with estimations if sparse is set to false and without if true
+    
     The "first" output will not show the adjustments, just the site code, date, data, and estimated data if you set sparse to false
     """
 
     output_filename = sitecode + "_" + str(wateryear) + "_" + "first.csv"
 
     if sparse == False:
-        
+
         # one perfect wateryear from 2013-10-01 00:00:00 to 2014-10-01 00:00:00 - iterator always "stops" one shy of last date time
         compare_range = drange(datetime.datetime(wateryear-1, 10, 1, 0, 0), datetime.datetime(wateryear, 10, 1, 0, 5), datetime.timedelta(minutes=5))
 
@@ -300,7 +344,7 @@ def generate_first(od, sparse=False):
         list_obs = sorted(od.keys())
 
         # iterate over the observed dates in the raw data
-        for index,each_obs in enumerate(list_obs[:-1]):
+        for index, each_obs in enumerate(list_obs[:-1]):
             
             # compute the difference between subsequent observations and test if it is 5 minutes
             compute_obs = list_obs[index+1] - list_obs[index]
@@ -420,28 +464,28 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
             # don't bother carrying site code, we'll have it in the function
             dt = datetime.datetime.strptime(str(row[1]), date_type)
             
-            # in both the first and "re" it is in column 3
+            # in both the first and "re", the data on which the computation is done is in column 3 (4th column)
             try:
                 data_value = round(float(row[3]),3)
             except Exception:
                 data_value = None
 
-            
-            # raw values brought across but don't do anything with them
+            # raw values brought across, but don't do anything with them in times other than the first time, store in column 2 (third column)
             try:
                 raw_value = round(float(row[2]),3)
             except Exception:
                 raw_value = None
             
             if method != "re":
-                # flag values are carried across but again, don't do anything with them
+                # flag values are carried across from the first or sparse methods, but again, don't do anything with them (come in column 4 ~ column 5)
                 flag_value = str(row[4])
             elif method == "re":
+                # flag values are carried across from subsequent runs using re - now in column 5 (~6)
                 flag_value = str(row[5])
 
+            # generate a dictionary of all the values in the inputs
             if dt not in od:
-                
-                # assign 'NA' for events beforehand
+                # assign 'NA' for events beforehand, update after adjusting
                 od[dt] = {'raw' : raw_value, 'val': data_value, 'fval': flag_value, 'event':'NA'}
             
             elif dt in od:
@@ -464,17 +508,23 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
     return wd, output_filename
 
 def determine_weights(sitecode, wateryear, corr_od, od):
-    """ The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start"""
+    """ The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start
 
+    """
+
+    # these are the sorted "ending dates"
     try:
         corr_dates_as_list = sorted(corr_od.keys())
+    
     except Exception:
         # in 2015 the end date is missing so we need to not use that one, it is "None"
         corr_dates_1 = [x for x in corr_od.keys() if x != None]
         corr_dates_as_list = sorted(corr_dates_1)
+    
+    # generate a list of observed dates
     observed_dates_as_list = sorted(od.keys())
 
-    # filter the correction table to only include things that are indexed on an end date which is in our water year - nothing after this year.
+    # filter the correction table to only include things that are indexed on an enddate which is in our water year - nothing after this year.
     relevant_corr_dates = [x for x in corr_dates_as_list if x >= datetime.datetime(wateryear-1, 10,1,0,0)]
     
     # working dictionary
@@ -488,6 +538,9 @@ def determine_weights(sitecode, wateryear, corr_od, od):
 
     for each_date in observed_dates_as_list:
 
+
+        if each_date >= datetime.datetime(2013,11,1,0,0):
+            import pdb; pdb.set_trace()
         # as long as the date is less than the correction factor or equal to it
         if each_date <= this_correction:
 
@@ -498,20 +551,39 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             "weighted ratios" of each time : as we move towards the adjustment (this_correction) time, the ending ratio of hg/cr becomes more influential as compared to the beginning ratio of the hg/cr because the time_difference to the end gets very small relative to the duration of the interval as a whole. on the actual correction moment, there is no longer any beginning influence at all, as the difference between the current moment and the end of the interval are the same. the cr then is mapping directly onto the hook gage - the value in (cr) times the ratio of the (hg/cr) at the end times 1 yields the hg, and the ratio of the (hr/cr) at the beginning is times 0, so that does not have an affect.
             """
 
-            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
-            
-            weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
+            #weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
+            time_from_start = corr_od[this_correction]['duration'] - time_difference
 
+            print "the time from the start is :" + str(time_from_start) + "minutes"
+            
+            # let's say we are 8130/9050 minutes into the interval. 
+            # the weight of the beginning of the interval would be 1 if we were 0/9050, and 0 if we were 9050 of 9050
+            # as it stands, the weight of the beginning is (1 - (minutes_in/total_minutes))
+            # in this case, that is 1-0.89 = 0.11
+            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*(1-(time_from_start/corr_od[this_correction]['duration']))
+
+            # for the end, the weight of the end of the interval would be 1 if we were at 9050/9050 and 0 if we are at 0/9050. 
+            # as it stands, the weight of the end is (minutes_in/total_minutes)
+            # in this case, that is 0.89
+            # the ratio at the end ('end_rat') carries a 0.89 weight
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*(time_from_start/corr_od[this_correction]['duration']) 
+
+            # now we will take the weighted beginning ratio and multiply the value by it, and add that to the weighted ending ratio, also multiplied by the value, to generate the adjustment.
             try:
                 adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
             except Exception:
                 adjusted_value = None
 
+            print "the weight of the beginning is :" + str(round(weighted_begin_ratio*od[each_date]['val'],3)) + "and the weight of the end is :" + str(round(weighted_end_ratio*od[each_date]['val'],3)) + "which is a total of " + str(adjusted_value)
+
+            # if the date incoming is not the same as the correction date, the event is a nonevent.
             if each_date != this_correction:
                 event = 'NA'
             else: 
                 event = "MAINTE"
 
+        # if the event is more than the correction date, we need to move to the next correction factor.
         elif each_date > this_correction:
             
             # assign the event
@@ -528,19 +600,29 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             # the time left until the end of the interval, in minutes
             time_difference = float((this_correction - each_date).days*1440 + (this_correction - each_date).seconds//60)
             
-            # the "weighted ratios" of that time 
-            # as we move towards the adjustment, the ending ratio of hg/cr becomes more influential because the time_difference to the end gets really small and the duration is the same. when you are at the end, there is no longer any beginning influence and you are doing all the adjustment of the hg. when you move into the next interval, then, you are aligned.
-            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
-            
-            weighted_end_ratio = corr_od[this_correction]['end_rat']*(1-time_difference/corr_od[this_correction]['duration']) 
+            time_from_start = corr_od[this_correction]['duration'] - time_difference
+
+            # let's say we are 8130/9050 minutes into the interval. 
+            # the weight of the beginning of the interval would be 1 if we were 0/9050, and 0 if we were 9050 of 9050
+            # as it stands, the weight of the beginning is (1 - (minutes_in/total_minutes))
+            # in this case, that is 1-0.89 = 0.11
+            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*(1-(time_from_start/corr_od[this_correction]['duration']))
+
+
+            # for the end, the weight of the end of the interval would be 1 if we were at 9050/9050 and 0 if we are at 0/9050. 
+            # as it stands, the weight of the end is (minutes_in/total_minutes)
+            # in this case, that is 0.89
+            # the ratio at the end ('end_rat') carries a 0.89 weight
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*(time_from_start/corr_od[this_correction]['duration'])
 
             try: 
                 adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
             except Exception:
                 adjusted_value = None
 
+        # if we aren't writing it out already
         if each_date not in wd:
-
 
             wd[each_date] = {'val': od[each_date]['val'], 'adj': adjusted_value, 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
 
@@ -674,10 +756,10 @@ if __name__ == "__main__":
     wateryear_raw = sys.argv[2]
     method= sys.argv[3]
 
-    sitecode, wateryear = string_correct(sitecode_raw,  wateryear_raw)
+    sitecode, wateryear = string_correct(sitecode_raw, wateryear_raw)
     
     # get the corr table and put it into a dictionary
-    corr_od = convert_corr_to_dict(sitecode)
+    corr_od = convert_corr_to_dict(sitecode, wateryear)
 
     # create subfolders for images and working data
     create_subfolders(sitecode, wateryear)
@@ -692,7 +774,7 @@ if __name__ == "__main__":
         od = parameterize_first(sitecode, wateryear, filename)
 
         # generate a first data with or without estimations
-        output_filename_first = generate_first(od,  sparse=False)
+        output_filename_first = generate_first(od, sparse=False)
 
         # generate the adjustments data with the extra column
         adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
