@@ -198,6 +198,8 @@ def convert_corr_to_dict(sitecode, wateryear):
             bgnhg = float(row[5])
 
             bgnratio = bgnhg/bgncr
+            bgn_diff = bgnhg - bgncr
+            
         
             try:
                 # first date format
@@ -236,11 +238,13 @@ def convert_corr_to_dict(sitecode, wateryear):
                 endcr = float(row[7])
                 endhg = float(row[8])            
                 endratio = endhg/endcr
+                end_diff = endhg - endcr
 
             except Exception as exc:
                 endcr = None
                 endhg = None
                 endratio = None
+                end_diff = None
 
             try:
                 # compute the duration of the interval from that beginning time to its follower in minutes
@@ -253,7 +257,7 @@ def convert_corr_to_dict(sitecode, wateryear):
             # if the key is already in the dictionary, skip it
             if enddt not in od:
                 # populate it
-                od[enddt] = {'sitecode': sitecode, 'bgn_cr' : bgncr, 'bgn_hg' :bgnhg, 'bgn_rat': bgnratio, 'bgn_dt' : dt, 'end_cr' : endcr, 'end_hg': endhg, 'end_rat': endratio, 'duration':duration}
+                od[enddt] = {'sitecode': sitecode, 'bgn_cr': bgncr, 'bgn_hg': bgnhg, 'bgn_rat': bgnratio, 'bgn_dt' : dt, 'end_cr': endcr, 'end_hg': endhg, 'end_rat': endratio, 'duration':duration, 'end_diff': end_diff, 'bgn_diff': bgn_diff}
             
             elif enddt in od:
                 pass
@@ -434,8 +438,13 @@ def generate_first(od, sparse=False):
     return output_filename
 
 def do_adjustments(sitecode, wateryear, filename, corr_od, method):
-    """ 
-    performs adjustments on the outputs - ALWAYS pulls from column 3!
+    """ Performs adjustments on the outputs - ALWAYS pulls from column 3!
+
+    :sitecode: ex. GSWS01
+    :wateryear: ex. 2010
+    :filename: csv file containing the input (program assigns)
+    :corr_od: dictionary of corrections
+    :method: 're' in most cases
     """
 
     output_filename = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
@@ -451,6 +460,7 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
     # check date type by using the first column
     try:
         date_type = test_csv_date(filename, 1)
+    
     except Exception:
         # raw data of ws3 it's on the 0th column!
         date_type = test_csv_date(filename, 0)
@@ -477,13 +487,14 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
                 raw_value = None
             
             if method != "re":
-                # flag values are carried across from the first or sparse methods, but again, don't do anything with them (come in column 4 ~ column 5)
+                # flag values are just assigned as "a" in first and sparse modes; we do anything with them; in column 4 (fifth column)
                 flag_value = str(row[4])
+            
             elif method == "re":
-                # flag values are carried across from subsequent runs using re - now in column 5 (~6)
+                # flag values are carried across from subsequent runs using re - now in column 5 (6th column) because the new adjustments are in column 4
                 flag_value = str(row[5])
 
-            # generate a dictionary of all the values in the inputs
+            # generate a dictionary of all the values in the inputs - datetime : raw, adjustable, flag, event
             if dt not in od:
                 # assign 'NA' for events beforehand, update after adjusting
                 od[dt] = {'raw' : raw_value, 'val': data_value, 'fval': flag_value, 'event':'NA'}
@@ -491,24 +502,52 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
             elif dt in od:
                 pass
        
-        # the key function is "determine weights"
+        # the key function is "determine weights" -- this is where the adjustment happens
         wd = determine_weights(sitecode, wateryear, corr_od, od)
-        """
-        This monstrous structure contains all of your wildest linear interpolation dreams for validating the code!
 
-        wd[each_date] = {'val': od[each_date]['val'], 'adj': round(adjusted_value,3), 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
 
-        """
+    # for testing only - compares the "ratio method" with the "difference method". The "difference method" is what Don used before, it is more "linear". The ratio method does not resolve correctly, we shouldn't look at the cr as a % of the hg, but instead as something that fluctuates with it
+    with open('test.csv','wb') as writefile:
+        writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
+        for each_date in sorted(wd.keys()):
+            writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], round(wd[each_date]['adj_diff'],3), round(wd[each_date]['adj_rat'],3), wd[each_date]['fval'], wd[each_date]['event']])
+
+    # the difference method does resolve correctly, as far as I can see from testing on ws1 alone
     with open(output_filename, 'wb') as writefile:
         writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
 
         for each_date in sorted(wd.keys()):
-            writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], wd[each_date]['adj'], wd[each_date]['fval'], wd[each_date]['event']])
+            writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], round(wd[each_date]['adj_diff'],3), wd[each_date]['fval'], wd[each_date]['event']])
 
     return wd, output_filename
 
+def make_optional_graphs(wd):
+    """ A function that can be called to graph the difference method against the ratio method if necessary.
+
+    Do not need in production,  but used for testing on 10-1-2015 to see if we can get to the values working as Don expects
+    :wd: the dictionary containing adjustments etc used to figure out the final csv 
+    """
+
+    if wd != {} and wd[wd.keys()[0]]['adj_diff'] != None and wd[wd.keys()[0]]['adj_rat'] != None:
+
+        datelist = [x for x in sorted(wd.keys()) if wd[x]['adj_rat'] != None and wd[x]['adj_diff'] != None]
+        val_diff = [wd[x]['adj_diff'] for x in datelist]
+        val_rat = [wd[x]['adj_rat'] for x in datelist]
+
+        fig, ax = plt.subplots()
+        fig.autofmt_xdate()
+        ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
+        ax.plot(datelist, val_diff, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'diff method')
+        ax.plot(datelist, val_rat, color = 'red', linewidth= 0.7, label = 'ratio method')
+        #ax.scatter(mainte_dates, maintes, s=30, c='red', alpha = 0.4, label='MAINTE')
+        ax.legend(loc = 1)
+
+        mpld3.show()
+
 def determine_weights(sitecode, wateryear, corr_od, od):
-    """ The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start
+    """ Determines the adjustment for each given observation and applies it.
+
+    The corr dates prior to the start of the data set can be disregarded except for the one just prior to the start
 
     """
 
@@ -531,6 +570,7 @@ def determine_weights(sitecode, wateryear, corr_od, od):
     wd = {}
 
     # we'll use the same "correction" until we pass that time, at which point, we'll move to the next correction factor, by calling the iterator.next() method
+    # by indexing on the final date we don't have to worry that we'll run over the boundary of the iterator
     iterator_for_correction = iter(relevant_corr_dates)
 
     # the first correction to be applied
@@ -538,44 +578,60 @@ def determine_weights(sitecode, wateryear, corr_od, od):
 
     for each_date in observed_dates_as_list:
 
+        # # for testing:
+        # if each_date > datetime.datetime(2013,10,23,0,0):
+        #     import pdb; pdb.set_trace()
 
-        if each_date >= datetime.datetime(2013,11,1,0,0):
-            import pdb; pdb.set_trace()
         # as long as the date is less than the correction factor or equal to it
         if each_date <= this_correction:
 
-            # the time left until the end of the interval, in minutes
+            # the number of minutes left until the end of the interval, in minutes - for example, if the interval is 9000 minutes long and we are 7000 minutes in, this is 2000
             time_difference = float((this_correction-each_date).days*1440 + (this_correction - each_date).seconds//60)
             
-            """
-            "weighted ratios" of each time : as we move towards the adjustment (this_correction) time, the ending ratio of hg/cr becomes more influential as compared to the beginning ratio of the hg/cr because the time_difference to the end gets very small relative to the duration of the interval as a whole. on the actual correction moment, there is no longer any beginning influence at all, as the difference between the current moment and the end of the interval are the same. the cr then is mapping directly onto the hook gage - the value in (cr) times the ratio of the (hg/cr) at the end times 1 yields the hg, and the ratio of the (hr/cr) at the beginning is times 0, so that does not have an affect.
-            """
-
-            #weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*time_difference/corr_od[this_correction]['duration']
+            # the number of minutes elapsed from the starting time
             time_from_start = corr_od[this_correction]['duration'] - time_difference
-
-            print "the time from the start is :" + str(time_from_start) + "minutes"
             
             # let's say we are 8130/9050 minutes into the interval. 
             # the weight of the beginning of the interval would be 1 if we were 0/9050, and 0 if we were 9050 of 9050
             # as it stands, the weight of the beginning is (1 - (minutes_in/total_minutes))
-            # in this case, that is 1-0.89 = 0.11
-            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
-            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*(1-(time_from_start/corr_od[this_correction]['duration']))
-
+            beginning_weight = (1-(time_from_start/corr_od[this_correction]['duration']))
             # for the end, the weight of the end of the interval would be 1 if we were at 9050/9050 and 0 if we are at 0/9050. 
             # as it stands, the weight of the end is (minutes_in/total_minutes)
             # in this case, that is 0.89
+            ending_weight = (time_from_start/corr_od[this_correction]['duration']) 
+            
+            # in this case, that is 1-0.89 = 0.11
+            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*beginning_weight
+
+            # if we use the diff method, we need that the weight of the beginning of the interval has an offset of 1 of its own weight and 0 of the ends weight - for example a value of 0.211 should go up to .214 with the largest offset as represented by the beginning
+            weighted_begin_diff = corr_od[this_correction]['bgn_diff']*beginning_weight
+
             # the ratio at the end ('end_rat') carries a 0.89 weight
-            weighted_end_ratio = corr_od[this_correction]['end_rat']*(time_from_start/corr_od[this_correction]['duration']) 
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*ending_weight
+
+            # if we use the end method, then the adjustment at the end time should be the whole weight of that adjustment and should peak at the exact time that the time from start is = the duration 
+            weighted_end_diff = corr_od[this_correction]['end_diff']*ending_weight
 
             # now we will take the weighted beginning ratio and multiply the value by it, and add that to the weighted ending ratio, also multiplied by the value, to generate the adjustment.
             try:
-                adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
+                adjusted_value_rat = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
             except Exception:
-                adjusted_value = None
+                adjusted_value_rat = None
 
-            print "the weight of the beginning is :" + str(round(weighted_begin_ratio*od[each_date]['val'],3)) + "and the weight of the end is :" + str(round(weighted_end_ratio*od[each_date]['val'],3)) + "which is a total of " + str(adjusted_value)
+            try:
+                # adjusted by difference method 
+                # ex, if the beginning is 50% of the weight and the adj is + 3 and the end is 50% of the weight and the adj is -5, then the middle is + 1.5 - 2.5, which is -1, plus whatever the actual value on the cr logger is
+                adjusted_value_diff = round(weighted_begin_diff, 3) + round(weighted_end_diff,3) + od[each_date]['val']
+            except Exception:
+                adjusted_value_diff= None
+
+            try:
+                print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+
+            except Exception:
+                pass
+
 
             # if the date incoming is not the same as the correction date, the event is a nonevent.
             if each_date != this_correction:
@@ -592,39 +648,63 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             try:
                 # step to the next correction factor
                 this_correction = iterator_for_correction.next()
+            
             except StopIteration:
                 return wd
 
             # you still need to compute this value here! because the correction has moved on it should fall into the less than pool on the next loop
 
-            # the time left until the end of the interval, in minutes
-            time_difference = float((this_correction - each_date).days*1440 + (this_correction - each_date).seconds//60)
+            # the number of minutes left until the end of the interval, in minutes - for example, if the interval is 9000 minutes long and we are 7000 minutes in, this is 2000
+            time_difference = float((this_correction-each_date).days*1440 + (this_correction - each_date).seconds//60)
             
+            # the number of minutes elapsed from the starting time
             time_from_start = corr_od[this_correction]['duration'] - time_difference
-
+            
             # let's say we are 8130/9050 minutes into the interval. 
             # the weight of the beginning of the interval would be 1 if we were 0/9050, and 0 if we were 9050 of 9050
             # as it stands, the weight of the beginning is (1 - (minutes_in/total_minutes))
-            # in this case, that is 1-0.89 = 0.11
-            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
-            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*(1-(time_from_start/corr_od[this_correction]['duration']))
-
-
+            beginning_weight = (1-(time_from_start/corr_od[this_correction]['duration']))
             # for the end, the weight of the end of the interval would be 1 if we were at 9050/9050 and 0 if we are at 0/9050. 
             # as it stands, the weight of the end is (minutes_in/total_minutes)
             # in this case, that is 0.89
-            # the ratio at the end ('end_rat') carries a 0.89 weight
-            weighted_end_ratio = corr_od[this_correction]['end_rat']*(time_from_start/corr_od[this_correction]['duration'])
+            ending_weight = (time_from_start/corr_od[this_correction]['duration']) 
+            
+            # in this case, that is 1-0.89 = 0.11
+            # the ratio at the beginning ('bgn_rat') carries a 0.11 weight.
+            weighted_begin_ratio = corr_od[this_correction]['bgn_rat']*beginning_weight
 
-            try: 
-                adjusted_value = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
+            # if we use the diff method, we need that the weight of the beginning of the interval has an offset of 1 of its own weight and 0 of the ends weight - for example a value of 0.211 should go up to .214 with the largest offset as represented by the beginning
+            weighted_begin_diff = corr_od[this_correction]['bgn_diff']*beginning_weight
+
+            # the ratio at the end ('end_rat') carries a 0.89 weight
+            weighted_end_ratio = corr_od[this_correction]['end_rat']*ending_weight
+
+            # if we use the end method, then the adjustment at the end time should be the whole weight of that adjustment and should peak at the exact time that the time from start is = the duration 
+            weighted_end_diff = corr_od[this_correction]['end_diff']*ending_weight
+
+            # now we will take the weighted beginning ratio and multiply the value by it, and add that to the weighted ending ratio, also multiplied by the value, to generate the adjustment.
+            try:
+                adjusted_value_rat = round(weighted_begin_ratio*od[each_date]['val'] + weighted_end_ratio*od[each_date]['val'],3)
+            except Exception:
+                adjusted_value_rat = None
+
+            try:
+                # adjusted by difference method 
+                # ex, if the beginning is 50% of the weight and the adj is + 3 and the end is 50% of the weight and the adj is -5, then the middle is + 1.5 - 2.5, which is -1, plus whatever the actual value on the cr logger is
+                adjusted_value_diff = round(weighted_begin_diff, 3) + round(weighted_end_diff,3) + od[each_date]['val']
+            except Exception:
+                adjusted_value_diff = None
+
+            try:
+                print "ratio adjusted: " + str(adjusted_value_rat) + " | diff adjusted: " + str(adjusted_value_diff) + " | cr value: " + str(od[each_date]['val']) + " | correction ends: " + datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+
             except Exception:
                 adjusted_value = None
 
         # if we aren't writing it out already
         if each_date not in wd:
 
-            wd[each_date] = {'val': od[each_date]['val'], 'adj': adjusted_value, 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
+            wd[each_date] = {'val': od[each_date]['val'], 'adj_diff': adjusted_value_diff, 'adj_rat': adjusted_value_rat, 'wt_bgn': round(time_difference/corr_od[this_correction]['duration'],3), 'wt_end': round((1-time_difference/corr_od[this_correction]['duration']),3), 'wt_bgn_ratio': round(weighted_begin_ratio,3), 'wt_end_ratio': round(weighted_end_ratio,3), 'raw' : od[each_date]['raw'], 'fval': od[each_date]['fval'], 'event': event}
 
         elif each_date in wd:
             print "this date has already been put in"
@@ -685,21 +765,21 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
 
     for each_month in xrange(1,12):
         
+        # generate graphs for months with the wateryear as the year (vs. those year before)
         if each_month not in [10, 11, 12]:
             dates = [x for x in sorted_dates if x.month == each_month and x.year==wateryear]
             
             prior_values = [adjusted_dictionary[x]['val'] for x in dates if adjusted_dictionary[x]['val'] != None]
             pvd = [x for x in dates if adjusted_dictionary[x]['val'] != None]
             
-            adjusted_values = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['adj'] != None]
-            avd = [x for x in dates if adjusted_dictionary[x]['adj'] != None]
+            adjusted_values = [adjusted_dictionary[x]['adj_diff'] for x in dates if adjusted_dictionary[x]['adj_diff'] != None]
+            avd = [x for x in dates if adjusted_dictionary[x]['adj_diff'] != None]
 
-            #maintes = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
-            #mainte_dates = [x for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
-
+            # image name for png
             image_name = str(wateryear) + "_" + str(each_month) + "_wy_" + sitecode + ".png"
             name1 = os.path.join(dir_images, image_name)
 
+            # image name for html
             html_image_name = str(wateryear) + "_" + str(each_month) + "_wy_" + sitecode + ".html"
             name2 = os.path.join(dir_images, html_image_name)
 
@@ -708,7 +788,6 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
             ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
             ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
             ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
-            #ax.scatter(mainte_dates, maintes, s=30, c='red', alpha = 0.4, label='MAINTE')
             ax.legend(loc = 1)
             plt.savefig(name1)
 
@@ -717,17 +796,14 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
 
             plt.close()
 
-
+        # generate graphs for the year before (ie wy 2014 these have year 2013)
         elif each_month in [10,11,12]:
             dates = [x for x in sorted_dates if x.month == each_month and x.year == (wateryear -1)]
             prior_values = [adjusted_dictionary[x]['val'] for x in dates if adjusted_dictionary[x]['val'] != None]
             pvd = [x for x in dates if adjusted_dictionary[x]['val'] != None]
             
-            adjusted_values = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['adj'] != None]
-            avd = [x for x in dates if adjusted_dictionary[x]['adj'] != None]
-            
-            #maintes = [adjusted_dictionary[x]['adj'] for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
-            #mainte_dates = [x for x in dates if adjusted_dictionary[x]['event'] == "MAINTE"]
+            adjusted_values = [adjusted_dictionary[x]['adj_diff'] for x in dates if adjusted_dictionary[x]['adj_diff'] != None]
+            avd = [x for x in dates if adjusted_dictionary[x]['adj_diff'] != None]
 
             image_name = str(wateryear-1) + "_" + str(each_month) + "_wy_" + sitecode + ".png"
             name1 = os.path.join(dir_images, image_name)
@@ -740,18 +816,25 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
             ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
             ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
             ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
-            #ax.scatter(mainte_dates, maintes, s=30, c='red', alpha = 0.4, label='MAINTE')
             ax.legend(loc = 1)
             plt.savefig(name1)
 
-            ## generate HTML for October
             html = mpld3.fig_to_html(fig)
             mpld3.save_html(fig, name2)
 
             plt.close()
 
 if __name__ == "__main__":
+    """ This is the code to run the "main" loop.
 
+    :sitecode: - on command line, "GSWS01"
+    :year: - on command line 2014
+    :mode: - on command line 'first', 'sparse'', 're'
+
+    ..Example:
+    python weir2k.py "GSWS01" 2014 "first"
+    
+    """
     sitecode_raw = sys.argv[1]
     wateryear_raw = sys.argv[2]
     method= sys.argv[3]
@@ -779,6 +862,7 @@ if __name__ == "__main__":
         # generate the adjustments data with the extra column
         adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
 
+        make_optional_graphs(adjusted_dictionary)
         make_graphs(sitecode, wateryear, adjusted_dictionary)
     
     elif method == "sparse":
