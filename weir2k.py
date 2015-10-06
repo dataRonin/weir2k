@@ -345,11 +345,19 @@ def generate_first(od, sparse=False):
         estim_dict = {}
         
         # a list of the observed dates in the raw data
-        list_obs = sorted(od.keys())
+        list_obs_1 = sorted(od.keys())
+
+        # a list of the dates which come in via the raw data but have been assigned a non-conventional missing value
+        list_no_data = [key for (key,value) in sorted(od.items()) if value != None]
+
+        if len(list_no_data) < len(list_obs_1):
+            list_obs = list_no_data
+        else:
+            list_obs = list_obs_1
 
         # iterate over the observed dates in the raw data
         for index, each_obs in enumerate(list_obs[:-1]):
-            
+
             # compute the difference between subsequent observations and test if it is 5 minutes
             compute_obs = list_obs[index+1] - list_obs[index]
             """
@@ -366,8 +374,10 @@ def generate_first(od, sparse=False):
             else:
                 #import pdb; pdb.set_trace()
                 # generate a small range of dates for the missing dates and listify
+
                 mini_dates = drange(list_obs[index], list_obs[index+1], datetime.timedelta(minutes=5))
                 dl = [x for x in mini_dates]
+                
                 
                 # if the current value and the next one are the same
                 if od[list_obs[index]] == od[list_obs[index+1]]:
@@ -435,6 +445,7 @@ def generate_first(od, sparse=False):
 
             except Exception:
                 pass
+    
     return output_filename
 
 def do_adjustments(sitecode, wateryear, filename, corr_od, method):
@@ -506,19 +517,13 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
         wd = determine_weights(sitecode, wateryear, corr_od, od)
 
 
-    # for testing only - compares the "ratio method" with the "difference method". The "difference method" is what Don used before, it is more "linear". The ratio method does not resolve correctly, we shouldn't look at the cr as a % of the hg, but instead as something that fluctuates with it
-    with open('test.csv','wb') as writefile:
-        writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
-        for each_date in sorted(wd.keys()):
-            writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], round(wd[each_date]['adj_diff'],3), round(wd[each_date]['adj_rat'],3), wd[each_date]['fval'], wd[each_date]['event']])
-
     # the difference method does resolve correctly, as far as I can see from testing on ws1 alone
     with open(output_filename, 'wb') as writefile:
         writer = csv.writer(writefile, delimiter = ",", quoting=csv.QUOTE_NONNUMERIC)
 
         for each_date in sorted(wd.keys()):
             writer.writerow([sitecode, datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S'), wd[each_date]['raw'], wd[each_date]['val'], round(wd[each_date]['adj_diff'],3), wd[each_date]['fval'], wd[each_date]['event']])
-
+            
     return wd, output_filename
 
 def make_optional_graphs(wd):
@@ -664,6 +669,7 @@ def determine_weights(sitecode, wateryear, corr_od, od):
             # the weight of the beginning of the interval would be 1 if we were 0/9050, and 0 if we were 9050 of 9050
             # as it stands, the weight of the beginning is (1 - (minutes_in/total_minutes))
             beginning_weight = (1-(time_from_start/corr_od[this_correction]['duration']))
+
             # for the end, the weight of the end of the interval would be 1 if we were at 9050/9050 and 0 if we are at 0/9050. 
             # as it stands, the weight of the end is (minutes_in/total_minutes)
             # in this case, that is 0.89
@@ -851,18 +857,20 @@ if __name__ == "__main__":
     if method == "first":
         
         filename = find_files(sitecode, wateryear, 'raw_data')
+        
         print "File found for the " + method + " method : " + filename
 
         # figure out what columns contain the dates and raw values and read in from csv
         od = parameterize_first(sitecode, wateryear, filename)
 
         # generate a first data with or without estimations
+        import pdb; pdb.set_trace()
         output_filename_first = generate_first(od, sparse=False)
 
         # generate the adjustments data with the extra column
         adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
 
-        make_optional_graphs(adjusted_dictionary)
+        #make_optional_graphs(adjusted_dictionary) <--- do not run this! not for use!!
         make_graphs(sitecode, wateryear, adjusted_dictionary)
     
     elif method == "sparse":
