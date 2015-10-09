@@ -277,10 +277,11 @@ def parameterize_first(sitecode, wateryear, filename):
 
     # "output dictionary" --> anytime I use od in a program this is what it is -- Fox 09/10/2015
     od = {}
+    date_column = ""
 
     # figure out which column contains the date and what its type is
     date_type, column = test_csv_structure(filename)
-
+    date_column = column
     # opent the file and process
     with open(filename, 'rb') as readfile:
         reader = csv.reader(readfile)
@@ -309,7 +310,7 @@ def parameterize_first(sitecode, wateryear, filename):
             elif dt in od:
                 pass
     
-    return od
+    return od, date_column
 
 def generate_first(od, sparse=False):
     """ generates the outputs with estimations if sparse is set to false and without if true
@@ -317,6 +318,7 @@ def generate_first(od, sparse=False):
     The "first" output will not show the adjustments, just the site code, date, data, and estimated data if you set sparse to false
     """
 
+    
     output_filename = sitecode + "_" + str(wateryear) + "_" + "first.csv"
 
     if sparse == False:
@@ -419,12 +421,11 @@ def generate_first(od, sparse=False):
             try:
                 # blank dict has been gap filled
                 for each_date in sorted(blank_dict.keys()):
-                
                     dt = datetime.datetime.strftime(each_date, '%Y-%m-%d %H:%M:%S')
+                    
                     writer.writerow([sitecode, dt, blank_dict[each_date], estim_dict[each_date], flag_dict[each_date]])
 
             except Exception:
-
                 pass
 
     elif sparse == True:
@@ -448,7 +449,7 @@ def generate_first(od, sparse=False):
     
     return output_filename
 
-def do_adjustments(sitecode, wateryear, filename, corr_od, method):
+def do_adjustments(sitecode, wateryear, filename, corr_od, method, date_column):
     """ Performs adjustments on the outputs - ALWAYS pulls from column 3!
 
     :sitecode: ex. GSWS01
@@ -458,7 +459,7 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
     :method: 're' in most cases
     """
 
-    output_filename = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
+    output_filename = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working", sitecode + "_" + str(wateryear) + "_" + "re.csv")
 
     # create a backup copy if you're doing the re-adjustment, in the chance something got messed up
     if method=="re":
@@ -470,11 +471,13 @@ def do_adjustments(sitecode, wateryear, filename, corr_od, method):
     
     # check date type by using the first column
     try:
-        date_type = test_csv_date(filename, 1)
-    
+        date_type = test_csv_date(filename, date_column)
     except Exception:
-        # raw data of ws3 it's on the 0th column!
-        date_type = test_csv_date(filename, 0)
+        try:
+            date_type = test_csv_date(filename, 1)
+        except Exception:
+            # raw data of ws3 it's on the 0th column!
+            date_type = test_csv_date(filename, 0)
     
     # open the input file and process
     with open(filename, 'rb') as readfile:
@@ -729,10 +732,11 @@ def test_csv_date(filename, date_column):
     with open(filename, 'rb') as readfile:
         reader = csv.reader(readfile)
         testline = reader.next()
-        #import pdb; pdb.set_trace()
+
         try:
             is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_ideal)
             return dateformat_ideal
+        
         except Exception:
             try:
                 is_a_date = datetime.datetime.strptime(str(testline[date_column]), dateformat_old)
@@ -751,10 +755,11 @@ def test_csv_date(filename, date_column):
 
 def test_csv_structure(filename):
     """ try to find the date column in about 7 columns"""
+
     for column in [0,1,2,3,4,5,6,7]:
         
         date_type = test_csv_date(filename, column)
-        
+
         if date_type != False:
             return date_type, column
         else:
@@ -794,7 +799,7 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
             ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
             ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
             ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
-            ax.legend(loc = 1)
+            #ax.legend(loc = 1)
             plt.savefig(name1)
 
             html = mpld3.fig_to_html(fig)
@@ -822,7 +827,7 @@ def make_graphs(sitecode, wateryear, adjusted_dictionary):
             ax.fmt_xdata = mdates.DateFormatter('%Y-%m')
             ax.plot(pvd, prior_values, color = 'blue', linewidth= 1.2, alpha = 0.5, label = 'corrected cr logger')
             ax.plot(avd, adjusted_values, color = 'red', linewidth= 0.7, label = 'adjusted to hg')
-            ax.legend(loc = 1)
+            #ax.legend(loc = 1)
             plt.savefig(name1)
 
             html = mpld3.fig_to_html(fig)
@@ -861,14 +866,19 @@ if __name__ == "__main__":
         print "File found for the " + method + " method : " + filename
 
         # figure out what columns contain the dates and raw values and read in from csv
-        od = parameterize_first(sitecode, wateryear, filename)
+        od, date_column = parameterize_first(sitecode, wateryear, filename)
+
 
         # generate a first data with or without estimations
         #import pdb; pdb.set_trace()
         output_filename_first = generate_first(od, sparse=False)
 
+        print "Generating re file from " + output_filename_first + " for the method: " + method
+
         # generate the adjustments data with the extra column
-        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method, date_column)
+
+        print "Generated re file named " + output_filename_re + " !"
 
         #make_optional_graphs(adjusted_dictionary) <--- do not run this! not for use!!
         make_graphs(sitecode, wateryear, adjusted_dictionary)
@@ -879,23 +889,26 @@ if __name__ == "__main__":
         print "File found for the " + method + " method : " + filename
 
         # figure out what columns contain the dates and raw values and read in from csv
-        od = parameterize_first(sitecode, wateryear, filename)
+        od, date_column = parameterize_first(sitecode, wateryear, filename)
 
         # generate a first data with or without estimations
         output_filename_first = generate_first(od,  sparse=True)
 
-        # generate the adjustments data with the extra column
-        do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+        print "Generating re file from " + output_filename_first + " for the method: " + method
 
         # generate the adjustments data with the extra column
-        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method)
+        do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method, date_column)
 
+        # generate the adjustments data with the extra column
+        adjusted_dictionary, output_filename_re = do_adjustments(sitecode, wateryear, output_filename_first, corr_od, method, date_column)
+
+        print "Generated re file named " + output_filename_re + " !"
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
     elif method == "re":
         output_filename_re = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
 
-        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method)
+        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method, date_column)
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
     
