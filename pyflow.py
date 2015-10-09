@@ -752,7 +752,7 @@ def print_five_minute_file(final_dictionary, sitecode, wateryear, interval_lengt
             try: 
                 # test that a date is not a sample date
                 if each_date == given_sample:
-                    event = 'S'
+                    flag = 'S'
                     given_sample = ordered_samples.next()
                 else:
                     pass

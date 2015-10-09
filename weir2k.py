@@ -864,7 +864,7 @@ if __name__ == "__main__":
         od = parameterize_first(sitecode, wateryear, filename)
 
         # generate a first data with or without estimations
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         output_filename_first = generate_first(od, sparse=False)
 
         # generate the adjustments data with the extra column
