@@ -60,6 +60,9 @@ def find_files(sitecode, wateryear, subfolder):
         for x in names:
             if sitecode in x and str(wateryear) in x:
                 return os.path.join(subfolder,x)
+
+            elif sitecode.lower() in x and str(wateryear) in x:
+                return os.path.join(subfolder,x)
             else:
                 continue
 
@@ -905,10 +908,17 @@ if __name__ == "__main__":
         print "Generated re file named " + output_filename_re + " !"
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
+    
     elif method == "re":
+        
         output_filename_re = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working",sitecode + "_" + str(wateryear) + "_" + "re.csv")
 
-        adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method, date_column)
+        try:
+            adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re, corr_od, method, date_column)
+        
+        except Exception:
+            output_filename_re_lower = os.path.join(str(sitecode) + "_" + str(wateryear) + "_" + "working", sitecode.lower() + "_" + str(wateryear) + "_" + "re.csv")
+            adjusted_dictionary, output_filename = do_adjustments(sitecode, wateryear, output_filename_re_lower, corr_od, method, date_column)
 
         make_graphs(sitecode, wateryear, adjusted_dictionary)
     
